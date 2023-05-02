@@ -7,9 +7,20 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var rootCmd = &cobra.Command{
-	Use:   "revent",
-	Short: "Events generator for logstash",
+var (
+	URL     string
+	rootCmd = &cobra.Command{
+		Use:   "revent",
+		Short: "Events generator for logstash",
+	}
+)
+
+func init() {
+	rootCmd.PersistentFlags().StringVarP(&URL, "url", "u",
+		"http://localhost:9200", "URL")
+
+	rootCmd.AddCommand(fetchCmd)
+	rootCmd.AddCommand(pushCmd)
 }
 
 func Execute() {
