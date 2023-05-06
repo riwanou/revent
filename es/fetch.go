@@ -49,60 +49,24 @@ func (c *EsClient) FetchIndices() error {
 	return nil
 }
 
-// write beginning of custom json and index data
-func (c *EsClient) writeIndexInit(s *jsoniter.Stream, index string) {
-	s.WriteObjectStart()
-
-	s.WriteObjectField("name")
-	s.WriteString(index)
-
-	s.WriteMore()
-	s.WriteObjectField("index")
-	s.Write(c.Indices[index])
-}
-
-func (c *EsClient) writeMetadata(s *jsoniter.Stream, meta fetchMeta) {
-	s.WriteMore()
-	s.WriteObjectField("nb_events")
-	s.WriteInt(meta.nbDocs)
-}
-
-func (c *EsClient) writeEventsInit(s *jsoniter.Stream) {
-	s.WriteMore()
-	s.WriteObjectField("events")
-	s.WriteArrayStart()
-}
-
-// write single event, more indicate if `,` is needed
-func (c *EsClient) writeEvent(s *jsoniter.Stream, event []byte, more bool) {
-	s.Write(event)
-	if more {
-		s.WriteMore()
-	}
-}
-
-// write end of custom json format
-func (c *EsClient) writeEnd(s *jsoniter.Stream) {
-	s.WriteArrayEnd()
-	s.WriteObjectEnd()
-}
-
 // fetch all events from an index and write all needed data
 // to reconstruct it
 func (c *EsClient) FetchEvents(writer io.Writer,
 	bar *mpb.Bar, index string, limit int) error {
 
-	// write beginning of file and index data
-	s := jsoniter.NewStream(jsoniter.ConfigFastest, writer, _buflen)
-	defer s.Flush()
-	c.writeIndexInit(s, index)
+	// init writer for revent custom format
+	w := NewDataWriter(writer)
+	defer w.WriteEnd()
+	w.WriteIndex(index, c.Indices[index])
+	w.WriteEventsFetchNb(limit)
 
+	// fetch metadata
 	var scrollID string
 	var nbEvents int
 	fetched := 0
 	onEvent := func(data []byte) {
 		fetched += 1
-		c.writeEvent(s, data, fetched < nbEvents)
+		w.WriteEvent(data, fetched < nbEvents)
 		bar.Increment()
 	}
 
@@ -114,9 +78,9 @@ func (c *EsClient) FetchEvents(writer io.Writer,
 			bar.EnableTriggerComplete()
 			scrollID = meta.scrollID
 
-			// write nb docs, beginning of events array
-			c.writeMetadata(s, meta)
-			c.writeEventsInit(s)
+			// store fetched metadata
+			w.WriteEventsNb(meta.nbDocs)
+			w.WriteEventsArrayBegin()
 		},
 		onEvent: onEvent,
 	})
@@ -139,10 +103,8 @@ func (c *EsClient) FetchEvents(writer io.Writer,
 		limit -= fetched
 	}
 
-	// finish json object
-	c.writeEnd(s)
-
-	return s.Error
+	w.WriteEventsArrayEnd()
+	return w.Error()
 }
 
 // original query to fetch events

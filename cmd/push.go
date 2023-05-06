@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"log"
 	"os"
 	"path"
 	"sync"
@@ -12,11 +11,12 @@ import (
 )
 
 var (
-	InputPath string
-	Wipe      bool
-	pushCmd   = &cobra.Command{
+	InputPath        string
+	keepOldIndices   bool
+	WaitFullIndexing bool
+	pushCmd          = &cobra.Command{
 		Use:   "push",
-		Short: "Push an event to logstash",
+		Short: "Push events to Elasticsearch",
 		RunE:  runPush,
 	}
 )
@@ -24,21 +24,18 @@ var (
 func init() {
 	pushCmd.Flags().StringVarP(&InputPath, "input", "i",
 		"", "input directory path")
-	pushCmd.Flags().BoolVarP(&Wipe, "wipe", "w",
-		true, "wipe old index with same name")
+	pushCmd.Flags().BoolVarP(&keepOldIndices, "keep", "k",
+		false, "do not wipe old indices with the same names")
+	pushCmd.Flags().BoolVarP(&WaitFullIndexing, "wait-index", "w",
+		false, "wait till indexing is finished on ElasticSearch")
 	pushCmd.MarkFlagRequired("input")
 }
 
-func runPush(cmd *cobra.Command, args []string) error {
-
-	client, err := es.NewEsClient(URL)
-	if err != nil {
-		return err
-	}
-
+// get indices from filenames
+func readIndices() ([]string, error) {
 	entries, err := os.ReadDir(InputPath)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var indices []string
@@ -47,11 +44,27 @@ func runPush(cmd *cobra.Command, args []string) error {
 			indices = append(indices, entry.Name())
 		}
 	}
-	if err := client.WipeIndices(indices); err != nil {
+	return indices, nil
+}
+
+func runPush(cmd *cobra.Command, args []string) error {
+
+	indices, err := readIndices()
+	if err != nil {
 		return err
 	}
 
-	// return nil
+	// create an es client and wipe old indices
+	client, err := es.NewEsClient(URL)
+	if err != nil {
+		return err
+	}
+
+	if !keepOldIndices {
+		if err := client.WipeIndices(indices); err != nil {
+			return err
+		}
+	}
 
 	var wg sync.WaitGroup
 	p := mpb.New(
@@ -74,8 +87,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 		go func(f *os.File, index string) {
 			defer wg.Done()
 			defer f.Close()
-			if err := client.CreatePushIndex(f, bar, 2); err != nil {
-				log.Println(err)
+			if err := client.CreatePushIndex(f, bar, 2, WaitFullIndexing); err != nil {
 				bar.Abort(false)
 			}
 		}(f, index)

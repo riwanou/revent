@@ -6,7 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
+	"runtime"
+	"time"
 
 	"github.com/elastic/go-elasticsearch/v8/esutil"
 	jsoniter "github.com/json-iterator/go"
@@ -27,7 +28,7 @@ func (s *pushState) error(context string, msg string) bool {
 }
 
 // create an es index and push all events into it
-func (c *EsClient) CreatePushIndex(reader io.Reader, bar *mpb.Bar, batch int) error {
+func (c *EsClient) CreatePushIndex(reader io.Reader, bar *mpb.Bar, batch int, waitFullIndexing bool) error {
 
 	s := &pushState{
 		onEvent: func(nb int) {
@@ -47,12 +48,11 @@ func (c *EsClient) CreatePushIndex(reader io.Reader, bar *mpb.Bar, batch int) er
 			s.index = s.iter.ReadString()
 			return true
 		case "index":
-			s.iter.Skip()
-			// return c.createIndex(s)
+			return c.createIndex(s)
 		case "nb_events":
 			bar.SetTotal(int64(s.iter.ReadInt()), false)
 		case "events":
-			return c.pushEvents(s, batch)
+			return c.pushEvents(s, batch, waitFullIndexing)
 		default:
 			s.iter.Skip()
 		}
@@ -146,13 +146,14 @@ func (c *EsClient) createIndex(s *pushState) bool {
 }
 
 // push all events to es index
-func (c *EsClient) pushEvents(s *pushState, batch int) bool {
+func (c *EsClient) pushEvents(s *pushState, batch int, waitFullIndexing bool) bool {
 
 	bi, err := esutil.NewBulkIndexer(esutil.BulkIndexerConfig{
-		Index:  s.index,
-		Client: c.es,
-		// NumWorkers: runtime.NumCPU(),
-		FlushBytes: int(1024 * 1024 * 20),
+		Index:         s.index,
+		Client:        c.es,
+		NumWorkers:    runtime.NumCPU(),
+		FlushBytes:    int(1024 * 1024 * 20),
+		FlushInterval: 30 * time.Second,
 	})
 	if err != nil {
 		c.error(err.Error())
@@ -179,9 +180,11 @@ func (c *EsClient) pushEvents(s *pushState, batch int) bool {
 		return true
 	})
 
-	if err := bi.Close(context.Background()); err != nil {
-		c.error(err.Error())
-		return false
+	if waitFullIndexing {
+		if err := bi.Close(context.Background()); err != nil {
+			c.error(err.Error())
+			return false
+		}
 	}
 
 	// dur := time.Since(start)
@@ -190,7 +193,6 @@ func (c *EsClient) pushEvents(s *pushState, batch int) bool {
 	s.onFinished()
 
 	if bi.Stats().NumFailed > 0 {
-		log.Println("ERROR")
 		c.error(fmt.Sprintf("Bulk index failed for %d events",
 			bi.Stats().NumFailed))
 		return false
