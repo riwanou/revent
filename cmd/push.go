@@ -11,10 +11,9 @@ import (
 )
 
 var (
-	InputPath        string
-	keepOldIndices   bool
-	WaitFullIndexing bool
-	pushCmd          = &cobra.Command{
+	InputPath      string
+	keepOldIndices bool
+	pushCmd        = &cobra.Command{
 		Use:   "push",
 		Short: "Push events to Elasticsearch",
 		RunE:  runPush,
@@ -26,8 +25,6 @@ func init() {
 		"", "input directory path")
 	pushCmd.Flags().BoolVarP(&keepOldIndices, "keep", "k",
 		false, "do not wipe old indices with the same names")
-	pushCmd.Flags().BoolVarP(&WaitFullIndexing, "wait-index", "w",
-		false, "wait till indexing is finished on ElasticSearch")
 	pushCmd.MarkFlagRequired("input")
 }
 
@@ -87,7 +84,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 		go func(f *os.File, index string) {
 			defer wg.Done()
 			defer f.Close()
-			if err := client.CreatePushIndex(f, bar, 2, WaitFullIndexing); err != nil {
+			if err := client.CreatePushIndex(f, bar); err != nil {
 				bar.Abort(false)
 			}
 		}(f, index)

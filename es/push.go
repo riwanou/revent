@@ -6,31 +6,26 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"runtime"
-	"time"
 
 	"github.com/elastic/go-elasticsearch/v8/esutil"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/vbauerster/mpb/v8"
 )
 
+const _flushlen = 1024 * 1024 * 20
+
 type pushState struct {
-	index      string
-	iter       *jsoniter.Iterator
+	dr         *DataReader
+	indexName  string
 	onEvent    func(nb int)
 	onFinished func()
 }
 
-// push error to jsoniter iterator
-func (s *pushState) error(context string, msg string) bool {
-	s.iter.ReportError(context, msg)
-	return false
-}
-
 // create an es index and push all events into it
-func (c *EsClient) CreatePushIndex(reader io.Reader, bar *mpb.Bar, batch int, waitFullIndexing bool) error {
+func (c *EsClient) CreatePushIndex(reader io.Reader, bar *mpb.Bar) error {
 
 	s := &pushState{
+		dr: NewDataReader(reader),
 		onEvent: func(nb int) {
 			bar.SetCurrent(int64(nb))
 		},
@@ -38,39 +33,47 @@ func (c *EsClient) CreatePushIndex(reader io.Reader, bar *mpb.Bar, batch int, wa
 			bar.EnableTriggerComplete()
 		},
 	}
-	s.iter = jsoniter.Parse(jsoniter.ConfigFastest, reader, _buflen)
 
-	bar.SetTotal(100000, false)
+	s.indexName = s.dr.ReadIndexName()
+	indexData := s.dr.ReadIndexData()
+	c.createIndex(s.indexName, indexData)
 
-	s.iter.ReadMapCB(func(_ *jsoniter.Iterator, field string) bool {
-		switch field {
-		case "name":
-			s.index = s.iter.ReadString()
-			return true
-		case "index":
-			return c.createIndex(s)
-		case "nb_events":
-			bar.SetTotal(int64(s.iter.ReadInt()), false)
-		case "events":
-			return c.pushEvents(s, batch, waitFullIndexing)
-		default:
-			s.iter.Skip()
-		}
-		return true
-	})
+	limit := s.dr.ReadEventsFetchLimit()
+	nbEvents := s.dr.ReadEventsNb()
+	bar.SetTotal(int64(min(nbEvents, limit)), false)
+
+	c.pushEvents(s)
 
 	if c.Error != nil {
 		return c.Error
 	}
+	return s.dr.Error()
+}
 
-	return s.iter.Error
+// wipe old indices
+func (c *EsClient) WipeIndices(indices []string) error {
+
+	res, err := c.es.Indices.Delete(indices,
+		c.es.Indices.Delete.WithIgnoreUnavailable(true),
+	)
+	if err != nil {
+		return err
+	}
+	if res.IsError() {
+		if data, err := io.ReadAll(res.Body); err == nil {
+			return errors.New(string(data))
+		}
+		return errors.New("Could not remove old indices")
+	}
+
+	return nil
 }
 
 // remove private field in index definition
-func filterIndexDefinition(iter *jsoniter.Iterator) ([]byte, error) {
+func filterIndexDefinition(indexData []byte) ([]byte, error) {
 
 	var def map[string]interface{}
-	jsoniter.Unmarshal(iter.SkipAndReturnBytes(), &def)
+	jsoniter.Unmarshal(indexData, &def)
 
 	settings, ok := def["settings"]
 	if !ok {
@@ -97,37 +100,18 @@ func filterIndexDefinition(iter *jsoniter.Iterator) ([]byte, error) {
 		return nil, err
 	}
 
-	return data, iter.Error
-}
-
-// wipe old indices
-func (c *EsClient) WipeIndices(indices []string) error {
-
-	res, err := c.es.Indices.Delete(indices,
-		c.es.Indices.Delete.WithIgnoreUnavailable(true),
-	)
-	if err != nil {
-		return err
-	}
-	if res.IsError() {
-		if data, err := io.ReadAll(res.Body); err == nil {
-			return errors.New(string(data))
-		}
-		return errors.New("Could not remove old indices")
-	}
-
-	return nil
+	return data, nil
 }
 
 // create an es index
-func (c *EsClient) createIndex(s *pushState) bool {
-	def, err := filterIndexDefinition(s.iter)
+func (c *EsClient) createIndex(indexName string, indexData []byte) bool {
+	def, err := filterIndexDefinition(indexData)
 	if err != nil {
 		c.error(err.Error())
 	}
 
 	res, err := c.es.Indices.Create(
-		s.index,
+		indexName,
 		c.es.Indices.Create.WithBody(bytes.NewReader(def)),
 	)
 	if err != nil {
@@ -146,29 +130,27 @@ func (c *EsClient) createIndex(s *pushState) bool {
 }
 
 // push all events to es index
-func (c *EsClient) pushEvents(s *pushState, batch int, waitFullIndexing bool) bool {
+func (c *EsClient) pushEvents(s *pushState) bool {
 
 	bi, err := esutil.NewBulkIndexer(esutil.BulkIndexerConfig{
-		Index:         s.index,
-		Client:        c.es,
-		NumWorkers:    runtime.NumCPU(),
-		FlushBytes:    int(1024 * 1024 * 20),
-		FlushInterval: 30 * time.Second,
+		Index:      s.indexName,
+		Client:     c.es,
+		FlushBytes: _flushlen,
 	})
 	if err != nil {
 		c.error(err.Error())
 		return false
 	}
 
-	// start := time.Now().UTC()
-
-	s.iter.ReadArrayCB(func(_ *jsoniter.Iterator) bool {
-		data := s.iter.SkipAndReturnBytes()
+	s.dr.ReadEvents(func(data []byte) bool {
 		err = bi.Add(
 			context.Background(),
 			esutil.BulkIndexerItem{
-				Action: "create",
+				Action: "index",
 				Body:   bytes.NewReader(data),
+				OnSuccess: func(context.Context, esutil.BulkIndexerItem, esutil.BulkIndexerResponseItem) {
+					s.onEvent(int(bi.Stats().NumFlushed))
+				},
 			},
 		)
 		if err != nil {
@@ -176,19 +158,13 @@ func (c *EsClient) pushEvents(s *pushState, batch int, waitFullIndexing bool) bo
 			return false
 		}
 
-		s.onEvent(int(bi.Stats().NumAdded))
 		return true
 	})
 
-	if waitFullIndexing {
-		if err := bi.Close(context.Background()); err != nil {
-			c.error(err.Error())
-			return false
-		}
+	if err := bi.Close(context.Background()); err != nil {
+		c.error(err.Error())
+		return false
 	}
-
-	// dur := time.Since(start)
-	// log.Println(bi.Stats(), dur)
 
 	s.onFinished()
 

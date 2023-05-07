@@ -58,7 +58,7 @@ func (c *EsClient) FetchEvents(writer io.Writer,
 	w := NewDataWriter(writer)
 	defer w.WriteEnd()
 	w.WriteIndex(index, c.Indices[index])
-	w.WriteEventsFetchNb(limit)
+	w.WriteEventsFetchLimit(limit)
 
 	// fetch metadata
 	var scrollID string

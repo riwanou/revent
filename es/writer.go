@@ -14,7 +14,7 @@ const (
 	INDEX_DATA_FIELD = "indexData"
 
 	// Number of events fetched
-	EVENTS_FETCH_NB = "eventsFetchNb"
+	EVENTS_FETCH_LIMIT = "eventsFetchLimit"
 
 	// Actual number of events in index
 	EVENTS_NB = "eventsNb"
@@ -23,7 +23,7 @@ const (
 	EVENTS_ARRAY = "events"
 )
 
-// DataWriter is an io.Writer like object with write functions for revent custom format.
+// DataWriter is a io.Writer like object with write functions for revent custom format.
 type DataWriter struct {
 	s *jsoniter.Stream
 }
@@ -58,10 +58,10 @@ func (w *DataWriter) WriteIndex(indexName string, indexData []byte) {
 }
 
 // Maximum number of fetched events
-func (w *DataWriter) WriteEventsFetchNb(eventsMaxFetchNb int) {
+func (w *DataWriter) WriteEventsFetchLimit(eventsMaxFetchLimit int) {
 	w.s.WriteMore()
-	w.s.WriteObjectField(EVENTS_FETCH_NB)
-	w.s.WriteInt(eventsMaxFetchNb)
+	w.s.WriteObjectField(EVENTS_FETCH_LIMIT)
+	w.s.WriteInt(eventsMaxFetchLimit)
 }
 
 // Actual number of events in the index

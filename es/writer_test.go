@@ -6,23 +6,23 @@ import (
 	"testing"
 )
 
-func TestDummyFetch(t *testing.T) {
-	const expectedData = `{` +
-		`"indexName":"foo",` +
-		`"indexData":{},` +
-		`"eventsFetchNb":10,` +
-		`"eventsNb":100,` +
-		`"events":[` +
-		`{},{},{}` +
-		`]` +
-		`}`
+const DUMMY_FETCH_DATA = `{` +
+	`"indexName":"foo",` +
+	`"indexData":{},` +
+	`"eventsFetchLimit":10,` +
+	`"eventsNb":100,` +
+	`"events":[` +
+	`{},{},{}` +
+	`]` +
+	`}`
 
+func TestDummyWrite(t *testing.T) {
 	var b bytes.Buffer
 	func() {
 		w := NewDataWriter(io.Writer(&b))
 		defer w.WriteEnd()
 		w.WriteIndex("foo", []byte("{}"))
-		w.WriteEventsFetchNb(10)
+		w.WriteEventsFetchLimit(10)
 		w.WriteEventsNb(100)
 		w.WriteEventsArrayBegin()
 		w.WriteEvent([]byte("{}"), true)
@@ -31,7 +31,7 @@ func TestDummyFetch(t *testing.T) {
 		w.WriteEventsArrayEnd()
 	}()
 
-	if b.String() != expectedData {
-		t.Error("String not matching. \nleft:", b.String(), "\nright:", expectedData)
+	if b.String() != DUMMY_FETCH_DATA {
+		t.Error("String not matching. \nleft:", b.String(), "\nright:", DUMMY_FETCH_DATA)
 	}
 }

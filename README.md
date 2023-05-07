@@ -10,7 +10,7 @@ Fetch events from an ElasticSearch api and store them.
 {
   "indexName": "index name",
   "indexData": {},
-  "eventsFetchNb": 10,
+  "eventsFetchLimit": 10,
   "eventsNb": 100,
   "events": [
     {},
