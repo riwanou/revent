@@ -21,7 +21,8 @@ func TestDummyWrite(t *testing.T) {
 	func() {
 		w := NewDataWriter(io.Writer(&b))
 		defer w.WriteEnd()
-		w.WriteIndex("foo", []byte("{}"))
+		w.WriteIndexName("foo")
+		w.WriteIndexData([]byte("{}"))
 		w.WriteEventsFetchLimit(10)
 		w.WriteEventsNb(100)
 		w.WriteEventsArrayBegin()

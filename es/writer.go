@@ -49,9 +49,12 @@ func (w *DataWriter) WriteEnd() {
 }
 
 // Name and metadata of the index
-func (w *DataWriter) WriteIndex(indexName string, indexData []byte) {
+func (w *DataWriter) WriteIndexName(indexName string) {
 	w.s.WriteObjectField(INDEX_NAME_FIELD)
 	w.s.WriteString(indexName)
+}
+
+func (w *DataWriter) WriteIndexData(indexData []byte) {
 	w.s.WriteMore()
 	w.s.WriteObjectField(INDEX_DATA_FIELD)
 	w.s.Write(indexData)

@@ -57,7 +57,8 @@ func (c *EsClient) FetchEvents(writer io.Writer,
 	// init writer for revent custom format
 	w := NewDataWriter(writer)
 	defer w.WriteEnd()
-	w.WriteIndex(index, c.Indices[index])
+	w.WriteIndexName(index)
+	w.WriteIndexData(c.Indices[index])
 	w.WriteEventsFetchLimit(limit)
 
 	// fetch metadata

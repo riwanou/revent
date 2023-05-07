@@ -11,7 +11,7 @@ import (
 )
 
 var (
-	InputPath      string
+	PushInputPath  string
 	keepOldIndices bool
 	pushCmd        = &cobra.Command{
 		Use:   "push",
@@ -21,7 +21,7 @@ var (
 )
 
 func init() {
-	pushCmd.Flags().StringVarP(&InputPath, "input", "i",
+	pushCmd.Flags().StringVarP(&PushInputPath, "input", "i",
 		"", "input directory path")
 	pushCmd.Flags().BoolVarP(&keepOldIndices, "keep", "k",
 		false, "do not wipe old indices with the same names")
@@ -29,24 +29,25 @@ func init() {
 }
 
 // get indices from filenames
-func readIndices() ([]string, error) {
-	entries, err := os.ReadDir(InputPath)
+func ReadIndices(path string) ([]string, error) {
+	entries, err := os.ReadDir(path)
 	if err != nil {
 		return nil, err
 	}
 
 	var indices []string
 	for _, entry := range entries {
-		if !entry.IsDir() {
-			indices = append(indices, entry.Name())
+		if entry.IsDir() || entry.Name()[0] == '.' {
+			continue
 		}
+		indices = append(indices, entry.Name())
 	}
 	return indices, nil
 }
 
 func runPush(cmd *cobra.Command, args []string) error {
 
-	indices, err := readIndices()
+	indices, err := ReadIndices(PushInputPath)
 	if err != nil {
 		return err
 	}
@@ -73,7 +74,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 	// push events for all indices
 	for _, index := range indices {
 
-		f, err := os.Open(path.Join(InputPath, index))
+		f, err := os.Open(path.Join(PushInputPath, index))
 		if err != nil {
 			return err
 		}
@@ -81,13 +82,13 @@ func runPush(cmd *cobra.Command, args []string) error {
 		bar := newBar(p, "\033[38;2;120;180;255m"+index+"\033[39m  ",
 			"error while pushing")
 
-		go func(f *os.File, index string) {
+		go func(f *os.File) {
 			defer wg.Done()
 			defer f.Close()
 			if err := client.CreatePushIndex(f, bar); err != nil {
 				bar.Abort(false)
 			}
-		}(f, index)
+		}(f)
 	}
 
 	p.Wait()

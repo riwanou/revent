@@ -21,6 +21,7 @@ func init() {
 
 	rootCmd.AddCommand(fetchCmd)
 	rootCmd.AddCommand(pushCmd)
+	rootCmd.AddCommand(analyzeCmd)
 }
 
 func Execute() {
