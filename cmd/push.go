@@ -12,7 +12,7 @@ import (
 
 var (
 	PushInputPath  string
-	keepOldIndices bool
+	WipeOldIndices bool
 	pushCmd        = &cobra.Command{
 		Use:   "push",
 		Short: "Push events to Elasticsearch",
@@ -23,8 +23,8 @@ var (
 func init() {
 	pushCmd.Flags().StringVarP(&PushInputPath, "input", "i",
 		"", "input directory path")
-	pushCmd.Flags().BoolVarP(&keepOldIndices, "keep", "k",
-		false, "do not wipe old indices with the same names")
+	pushCmd.Flags().BoolVarP(&WipeOldIndices, "wipe", "k",
+		false, "wipe old indices with the same names")
 	pushCmd.MarkFlagRequired("input")
 }
 
@@ -58,7 +58,7 @@ func runPush(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	if !keepOldIndices {
+	if WipeOldIndices {
 		if err := client.WipeIndices(indices); err != nil {
 			return err
 		}
@@ -82,10 +82,11 @@ func runPush(cmd *cobra.Command, args []string) error {
 		bar := newBar(p, "\033[38;2;120;180;255m"+index+"\033[39m  ",
 			"error while pushing")
 
-		go func(f *os.File) {
+		func(f *os.File) {
 			defer wg.Done()
 			defer f.Close()
 			if err := client.CreatePushIndex(f, bar); err != nil {
+				os.Stderr.WriteString(err.Error() + "\n")
 				bar.Abort(false)
 			}
 		}(f)

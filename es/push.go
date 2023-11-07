@@ -12,7 +12,7 @@ import (
 	"github.com/vbauerster/mpb/v8"
 )
 
-const _flushlen = 1024 * 1024 * 20
+const _flushlen = 1024 * 1024 * 8
 
 type pushState struct {
 	dr         *DataReader
@@ -146,7 +146,7 @@ func (c *EsClient) pushEvents(s *pushState) bool {
 		err = bi.Add(
 			context.Background(),
 			esutil.BulkIndexerItem{
-				Action: "index",
+				Action: "create",
 				Body:   bytes.NewReader(data),
 				OnSuccess: func(context.Context, esutil.BulkIndexerItem, esutil.BulkIndexerResponseItem) {
 					s.onEvent(int(bi.Stats().NumFlushed))
