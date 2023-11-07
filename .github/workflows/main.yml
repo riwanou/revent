@@ -1,0 +1,26 @@
+# workflow name
+name: Generate release-artifacts
+
+# on events
+on:
+  release:
+    types: 
+        - created
+
+# workflow tasks
+jobs:
+  generate:
+    name: Generate cross-platform builds
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the repository
+        uses: actions/checkout@v2
+      - name: Generate build files
+        uses: thatisuday/go-cross-build@v1
+        with:
+            platforms: 'netbsd/386, netbsd/arm, linux/386, windows/386'
+            package: ''
+            name: 'revent'
+            compress: 'true'
+            dest: 'dist'
+            
