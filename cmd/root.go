@@ -11,7 +11,7 @@ var (
 	URL     string
 	rootCmd = &cobra.Command{
 		Use:   "revent",
-		Short: "Events generator for logstash",
+		Short: "Manager for Elastic Search events.",
 	}
 )
 
